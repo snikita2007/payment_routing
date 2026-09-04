@@ -16,12 +16,13 @@ module SpecHelpers
   FIXTURES = File.expand_path("fixtures", __dir__)
 
   # Провайдер с разумными дефолтами: в тесте задаём только то поле, которое проверяем.
+  # Ключ payment_system — как в боевом data/providers.json.
   def build_provider(name = "vipay", **fields)
-    Routing::Provider.from_hash({ "name" => name }.merge(stringify(fields)))
+    Routing::Provider.from_hash({ "payment_system" => name }.merge(stringify(fields)))
   end
 
   def build_operation(**fields)
-    defaults = { "operation_id" => "op_1", "amount" => 10_000, "bank" => "sber" }
+    defaults = { "operation_id" => "op_1", "amount" => 10_000, "bank" => "sberbank" }
     Routing::Operation.from_hash(defaults.merge(stringify(fields)))
   end
 

@@ -3,5 +3,6 @@ out/
 
 .bundle/
 vendor/bundle/
+/.claude
 CLAUDE.md
 описание.md

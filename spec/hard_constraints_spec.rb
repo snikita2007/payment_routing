@@ -30,7 +30,7 @@ RSpec.describe Routing::HardConstraints do
     end
 
     it "отсекает сумму ниже минимума" do
-      expect(reason_for(provider, build_operation(amount: 500))).to eq("amount_below_limit")
+      expect(reason_for(provider, build_operation(amount: 500))).to eq("amount_below_minimum")
     end
 
     it "считает обе границы допустимыми" do
@@ -95,6 +95,21 @@ RSpec.describe Routing::HardConstraints do
     it "отсекает банк из чёрного списка" do
       provider = build_provider(exclude_banks: %w[vtb])
       expect(reason_for(provider, build_operation(bank: "VTB"))).to eq("bank_excluded")
+    end
+
+    # В боевых данных exclude_banks — булев флаг, переключающий смысл banks.
+    it "читает banks как чёрный список при exclude_banks: true" do
+      provider = build_provider(banks: %w[vtb], exclude_banks: true)
+
+      expect(reason_for(provider, build_operation(bank: "vtb"))).to eq("bank_excluded")
+      expect(reason_for(provider, build_operation(bank: "sber"))).to be_nil
+    end
+
+    it "читает banks как белый список при exclude_banks: false" do
+      provider = build_provider(banks: %w[sberbank tinkoff], exclude_banks: false)
+
+      expect(reason_for(provider, build_operation(bank: "sberbank"))).to be_nil
+      expect(reason_for(provider, build_operation(bank: "alfa"))).to eq("bank_not_in_list")
     end
 
     it "сравнивает названия банков без учёта регистра и пробелов" do
@@ -191,7 +206,7 @@ RSpec.describe Routing::HardConstraints do
     let(:state) { build_state(providers) }
 
     it "разделяет пул на допущенных и отклонённых с причинами" do
-      result = described_class.eligible(providers, build_operation(amount: 20_000, bank: "sber"), state)
+      result = described_class.eligible(providers, build_operation(amount: 20_000, bank: "sberbank"), state)
 
       expect(result.eligible.map(&:name)).to eq(%w[vipay payflow spacepayments])
       expect(result.rejections.map { |a| [a.provider, a.reason] }).to eq(
@@ -227,7 +242,7 @@ RSpec.describe Routing::HardConstraints do
     end
 
     it "отдаёт attempts в формате routing_decisions" do
-      result = described_class.eligible(providers, build_operation(amount: 20_000, bank: "sber"), state)
+      result = described_class.eligible(providers, build_operation(amount: 20_000, bank: "sberbank"), state)
 
       expect(result.attempts.first.to_h).to eq(
         "provider" => "quickpay",

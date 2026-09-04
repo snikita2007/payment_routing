@@ -5,7 +5,8 @@
 # ЗАГЛУШКА до SoftScorer, никакой стратегии здесь не изображается. Смысл прогона в другом:
 # посмотреть, как фильтры и состояние ведут себя на длинной очереди.
 #
-#   ruby bin/hard_filter_run.rb --queue data/operations_queue_test.json
+#   ruby bin/hard_filter_run.rb --queue data/operations_queue_10.json
+#   ruby scripts/validate_10.rb out/hard_filter_dry_run.json
 
 require "json"
 require "optparse"
@@ -32,8 +33,7 @@ module HardFilterRun
     all_providers = load!(providers_path) { |path| Routing::DataLoader.providers(path) }
     operations = load!(queue_path) { |path| Routing::DataLoader.operations(path) }
 
-    # Self-provider не участвует в общем пуле: он последняя инстанция, а не конкурент.
-    external = all_providers.reject { |provider| provider.name == Routing::SELF_PROVIDER }
+    external = routable(all_providers)
 
     state = Routing::RoutingState.new(all_providers)
     in_flight = []
@@ -45,6 +45,16 @@ module HardFilterRun
     write_decisions(out_path, decisions)
     print_summary(all_providers, operations, decisions, state)
     decisions
+  end
+
+  # Кандидаты на роутинг. Не hard-проверки, а состав пула:
+  #  - self-provider держим в стороне, он последняя инстанция, а не конкурент;
+  #  - провайдер с нулевой целевой долей трафика в раздачу не идёт
+  #    (это же правило в scripts/validate_10.rb).
+  def routable(providers)
+    providers.reject do |provider|
+      provider.name == Routing::SELF_PROVIDER || provider.traffic_percentage.to_f.zero?
+    end
   end
 
   # Заявки не висят в работе вечно: к моменту следующей операции часть уже завершилась
@@ -175,7 +185,7 @@ end
 if $PROGRAM_NAME == __FILE__
   root = File.expand_path("..", __dir__)
   options = {
-    queue: File.join(root, "data", "operations_queue_test.json"),
+    queue: File.join(root, "data", "operations_queue_10.json"),
     providers: File.join(root, "data", "providers.json"),
     out: File.join(root, "out", "hard_filter_dry_run.json")
   }

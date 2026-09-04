@@ -15,7 +15,7 @@ module Routing
     def self.from_hash(hash)
       raise InvalidInputError, "провайдер задан не объектом: #{hash.inspect}" unless hash.is_a?(Hash)
 
-      name = fetch_any(hash, "name", "provider", "id", "code")
+      name = fetch_any(hash, "payment_system", "name", "provider", "id", "code")
       raise InvalidInputError, "у провайдера нет имени: #{hash.inspect}" if name.to_s.strip.empty?
 
       provider = new(name.to_s, hash)
@@ -88,15 +88,22 @@ module Routing
     # nil = список не задан, разрешены любые банки.
     # Пустой массив трактуем так же: это «поле не заполнили», а не «запретить всё».
     def banks
-      list = field("banks")
-      return nil if list.nil?
-
-      normalized = Array(list).map { |bank| self.class.normalize_bank(bank) }.reject(&:empty?)
-      normalized.empty? ? nil : normalized
+      normalize_bank_list(field("banks"))
     end
 
+    # В боевых данных exclude_banks — булев флаг: он переключает banks из белого
+    # списка в чёрный (см. scripts/validate_10.rb). В ТЗ то же поле показано как
+    # отдельный список исключений, поэтому поддерживаем обе формы.
     def exclude_banks
-      Array(field("exclude_banks")).map { |bank| self.class.normalize_bank(bank) }.reject(&:empty?)
+      value = field("exclude_banks")
+      return banks || [] if value == true
+
+      normalize_bank_list(value) || []
+    end
+
+    # true, если banks нужно читать как чёрный список, а не белый.
+    def banks_are_blacklist?
+      field("exclude_banks") == true
     end
 
     def provider_margin_pct
@@ -178,6 +185,13 @@ module Routing
 
     def optional_number(key)
       number(key, nil)
+    end
+
+    def normalize_bank_list(value)
+      return nil if value.nil? || value == true || value == false
+
+      normalized = Array(value).map { |bank| self.class.normalize_bank(bank) }.reject(&:empty?)
+      normalized.empty? ? nil : normalized
     end
 
     def to_number(value, key)
