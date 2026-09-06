@@ -1,63 +1,70 @@
 {
   "period": "2026-07-30",
   "profile": "hybrid",
-  "total_operations": 10,
+  "total_operations": 90,
   "distribution": {
     "vipay": {
-      "count": 4,
-      "share_pct": 40.0,
+      "count": 27,
+      "share_pct": 30.7,
       "target_pct": 40.0,
-      "deviation_pp": 0.0,
-      "volume": 102000,
-      "volume_share_pct": 26.4,
+      "deviation_pp": -9.3,
+      "volume": 600500,
+      "volume_share_pct": 17.2,
       "volume_target_pct": 35.0,
-      "volume_deviation_pp": -8.6
+      "volume_deviation_pp": -17.8
     },
     "payflow": {
-      "count": 2,
-      "share_pct": 20.0,
+      "count": 13,
+      "share_pct": 14.8,
       "target_pct": 35.0,
-      "deviation_pp": -15.0,
-      "volume": 40800,
-      "volume_share_pct": 10.6,
+      "deviation_pp": -20.2,
+      "volume": 97700,
+      "volume_share_pct": 2.8,
       "volume_target_pct": 20.0,
-      "volume_deviation_pp": -9.4
+      "volume_deviation_pp": -17.2
     },
     "quickpay": {
-      "count": 4,
-      "share_pct": 40.0,
+      "count": 48,
+      "share_pct": 54.5,
       "target_pct": 25.0,
-      "deviation_pp": 15.0,
-      "volume": 243000,
-      "volume_share_pct": 63.0,
+      "deviation_pp": 29.5,
+      "volume": 2795500,
+      "volume_share_pct": 80.0,
       "volume_target_pct": 45.0,
-      "volume_deviation_pp": 18.0
+      "volume_deviation_pp": 35.0
     }
   },
   "outcomes": {
     "total": {
-      "approved": 8,
-      "rejected": 1,
-      "expired": 1,
-      "total": 10,
-      "approval_rate_pct": 80.0
+      "approved": 64,
+      "rejected": 11,
+      "expired": 15,
+      "total": 90,
+      "approval_rate_pct": 71.1
     },
     "by_provider": {
-      "vipay": {
-        "approved": 3,
-        "rejected": 1,
-        "expired": 0,
-        "total": 4,
-        "approval_rate_pct": 75.0
-      },
       "quickpay": {
-        "approved": 3,
-        "rejected": 0,
-        "expired": 1,
-        "total": 4,
-        "approval_rate_pct": 75.0
+        "approved": 35,
+        "rejected": 6,
+        "expired": 7,
+        "total": 48,
+        "approval_rate_pct": 72.9
+      },
+      "vipay": {
+        "approved": 18,
+        "rejected": 5,
+        "expired": 4,
+        "total": 27,
+        "approval_rate_pct": 66.7
       },
       "payflow": {
+        "approved": 9,
+        "rejected": 0,
+        "expired": 4,
+        "total": 13,
+        "approval_rate_pct": 69.2
+      },
+      "spacepayments": {
         "approved": 2,
         "rejected": 0,
         "expired": 0,
@@ -67,47 +74,51 @@
     }
   },
   "skip_reasons": {
-    "bank_not_in_list": 8,
-    "amount_exceeds_limit": 3,
-    "amount_below_minimum": 2
+    "bank_not_in_list": 64,
+    "amount_exceeds_limit": 33,
+    "daily_limit_exceeded": 29,
+    "amount_below_minimum": 16
   },
-  "outscored_by_score": 7,
+  "outscored_by_score": 40,
   "projected_daily_utilization": {
     "vipay": {
-      "used": 3302000,
+      "used": 3800500,
       "limit": 5000000,
-      "utilization_pct": 66.0
+      "utilization_pct": 76.0
     },
     "payflow": {
-      "used": 2940800,
+      "used": 2997700,
       "limit": 3000000,
-      "utilization_pct": 98.0
+      "utilization_pct": 99.9
     },
     "quickpay": {
-      "used": 1343000,
+      "used": 3895500,
       "limit": 8000000,
-      "utilization_pct": 16.8
+      "utilization_pct": 48.7
     },
     "spacepayments": {
-      "used": 0,
+      "used": 1800,
       "limit": null,
       "utilization_pct": null
     }
   },
   "fallback": {
-    "count": 0,
-    "share_pct": 0.0,
+    "count": 2,
+    "share_pct": 2.2,
     "provider": "spacepayments"
   },
   "findings": [
-    "payflow недобрал 15.0 п.п. по количеству заявок (факт 20.0%, цель 35.0%); чаще всего его не допускал hard-фильтр bank_not_in_list — 4 заявки из 10.",
-    "quickpay перебрал 15.0 п.п. по количеству заявок (факт 40.0%, цель 25.0%); на 3 заявках он был единственным допущенным — выбор делали hard-фильтры, а не скоринг.",
-    "payflow выбрал 98.0% дневного лимита (2940800 из 3000000), запас 59200."
+    "vipay недобрал 9.3 п.п. по количеству заявок (факт 30.7%, цель 40.0%); чаще всего его не допускал hard-фильтр bank_not_in_list — 41 заявка из 90.",
+    "payflow недобрал 20.2 п.п. по количеству заявок (факт 14.8%, цель 35.0%); чаще всего его не допускал hard-фильтр daily_limit_exceeded — 29 заявок из 90.",
+    "quickpay перебрал 29.5 п.п. по количеству заявок (факт 54.5%, цель 25.0%); на 46 заявках он был единственным допущенным — выбор делали hard-фильтры, а не скоринг.",
+    "payflow выбрал 99.9% дневного лимита (2997700 из 3000000), запас 2300.",
+    "2 заявок ушли в fallback на spacepayments: на них ни один внешний провайдер не прошёл hard-фильтры."
   ],
   "recommendations": [
-    "payflow близок к дневному лимиту (98.0%, запас 59200) — снизить traffic_percentage payflow с 35.0 до 20.",
-    "payflow: daily_turnover_min 2950000 не набран (2940800, не хватает 9200) — поднять traffic_percentage или опустить daily_turnover_min до 2940800.",
-    "payflow: цель 35.0% недостижима — по bank_not_in_list отсеяно 4 заявки. Снизить traffic_percentage payflow до 20 или ослабить само ограничение.",
-    "quickpay: перебор 15.0 п.п., причём на 3 заявках он был единственным допущенным — весами это не лечится, надо расширять пул (ослабить banks или limit_amount_max у остальных)."
+    "payflow близок к дневному лимиту (99.9%, запас 2300) — снизить traffic_percentage payflow с 35.0 до 15.",
+    "vipay: цель 40.0% недостижима — по bank_not_in_list отсеяно 41 заявка. Снизить traffic_percentage vipay до 31 или ослабить само ограничение.",
+    "payflow: цель 35.0% недостижима — по daily_limit_exceeded отсеяно 29 заявок. Снизить traffic_percentage payflow до 15 или ослабить само ограничение.",
+    "quickpay: перебор 29.5 п.п., причём на 46 заявках он был единственным допущенным — весами это не лечится, надо расширять пул (ослабить banks или limit_amount_max у остальных).",
+    "2 заявок ушли в fallback — расширить пул: ослабить banks или limit_amount_max хотя бы у одного провайдера."
   ]
 }
