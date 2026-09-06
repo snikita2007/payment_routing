@@ -5,17 +5,14 @@
 по нескольким целям сразу (soft-goals) и фиксирует, почему выбран именно этот провайдер и почему
 отложены остальные.
 
-Полное ТЗ, форматы файлов и критерии оценки — в [описание.md](описание.md).
+Вход — `data/providers.json` (кто может принимать платежи и на каких условиях),
+очередь заявок (`data/operations_queue_10.json` — учебная на 10 заявок) и
+`data/operations_history.csv` (история для оценки конверсии).
 Язык — Ruby, без внешних зависимостей кроме RSpec.
 
 ## Сдаваемые файлы
 
 В корне репозитория лежат два артефакта, оба собираются одной командой:
-
-| Файл | Что внутри |
-|---|---|
-| [routing_decisions_test.json](routing_decisions_test.json) | решение по каждой заявке: выбранный провайдер, `attempts[]` с причинами выбора и отсева, симулированный исход и задержка |
-| [routing_report_test.json](routing_report_test.json) | аналитика: распределение против целевого, успешность и отказы, загрузка лимитов, причины отклонений и рекомендации |
 
 ```sh
 ruby bin/route.rb --queue data/operations_queue_test.json \
@@ -26,6 +23,48 @@ ruby bin/route.rb --queue data/operations_queue_test.json \
 > **Сейчас оба файла собраны на учебной очереди `data/operations_queue_10.json`** — настоящий
 > `operations_queue_test.json` организаторы выдают на хакатоне. Когда он появится, положите его
 > в `data/` и выполните команду выше: имена и расположение файлов менять не нужно.
+
+**[routing_decisions_test.json](routing_decisions_test.json)** — решение по каждой заявке.
+`attempts[]` содержит и выбранного провайдера, и всех рассмотренных с причиной отсева,
+поэтому по файлу видно не только «кого выбрали», но и «почему не остальных»:
+
+```jsonc
+{
+  "operation_id": "op_101",
+  "selected_provider": "vipay",
+  "attempts": [
+    { "provider": "vipay",    "decision": "selected", "reason": "highest_weighted_score",
+      "details": "score 0.476 = conversion 0.27×0.78 + priority 0.08×1.00 + ..." },
+    { "provider": "quickpay", "decision": "skipped",  "reason": "lower_score",
+      "details": "score 0.398 ... — ниже, чем у vipay (0.476)" }
+  ],
+  "simulated_result": "approved",   // approved / rejected / expired
+  "latency_sec": 51
+}
+```
+
+**[routing_report_test.json](routing_report_test.json)** — аналитика по этим решениям:
+
+```jsonc
+{
+  "period": "2026-07-30",
+  "total_operations": 10,
+  "distribution": {                  // факт против цели, по количеству и по объёму
+    "payflow": { "count": 2, "share_pct": 20.0, "target_pct": 35.0, "deviation_pp": -15.0, ... }
+  },
+  "outcomes": { ... },               // успешность и отказы, всего и по провайдерам
+  "skip_reasons": { "bank_not_in_list": 8, ... },
+  "projected_daily_utilization": {   // использование дневных лимитов
+    "payflow": { "used": 2940800, "limit": 3000000, "utilization_pct": 98.0 }
+  },
+  "findings": [                      // причины отклонений, с числами
+    "payflow недобрал 15.0 п.п. ...; чаще всего его не допускал hard-фильтр bank_not_in_list"
+  ],
+  "recommendations": [               // конкретный параметр к изменению, а не общие слова
+    "payflow близок к дневному лимиту (98.0%) — снизить traffic_percentage payflow с 35.0 до 20."
+  ]
+}
+```
 
 ## Запуск
 
@@ -184,8 +223,8 @@ Score = w_t·D_t + w_v·D_v + w_c·C + w_p·P + w_m·M + w_l·L + w_s·Speed −
 
 ## Поля, которых нет в исходных данных
 
-`volume_share_pct`, `priority`, `requests_per_minute_limit`, `daily_turnover_min`,
-`daily_turnover_max` ТЗ предлагает командам задать самим. Они живут в
+Полей `volume_share_pct`, `priority`, `requests_per_minute_limit`, `daily_turnover_min`
+и `daily_turnover_max` в исходном `providers.json` нет — их задаёт команда. Они живут в
 [config/provider_overrides.yml](config/provider_overrides.yml), а не в `data/providers.json`:
 на сдаче организаторы пришлют свой `providers.json`, и правки в файле данных пропали бы вместе
 с ним. Все поля читаются через дефолты, так что решение работает и без оверлея.
