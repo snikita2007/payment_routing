@@ -1,0 +1,117 @@
+# Веса и параметры soft-скоринга.
+#
+# Score = w_t·D_t + w_v·D_v + w_c·C + w_p·P + w_m·M + w_l·L + w_s·Speed
+#
+#   D_t    — недобор целевой доли по количеству заявок (traffic_percentage)
+#   D_v    — недобор целевой доли по объёму (volume_share_pct)
+#   C      — конверсия: по истории или заявленная в providers.json
+#   P      — позиция в каскаде, 1 / priority
+#   M      — недобор минимального дневного оборота (daily_turnover_min)
+#   L      — свободная мощность: 1 − максимальная загрузка in-progress
+#   Speed  — скорость по avg_latency_sec
+#
+# Здесь меняются только числа. Дефолты продублированы в ScoringConfig::DEFAULTS,
+# так что частичный файл — рабочий: достаточно переопределить нужную строку.
+
+profile: hybrid
+
+profiles:
+  # Основной профиль: конверсия берётся из истории.
+  hybrid:
+    weights:
+      traffic_share: 0.20
+      volume_share: 0.15
+      conversion: 0.30
+      priority: 0.10
+      turnover_min: 0.15
+      load: 0.05
+      speed: 0.05
+
+  # Без истории: конверсия — заявленный conversion_24h, скорость не учитываем.
+  declared:
+    weights:
+      traffic_share: 0.25
+      volume_share: 0.20
+      conversion: 0.25
+      priority: 0.10
+      turnover_min: 0.15
+      load: 0.05
+      speed: 0.00
+    conversion:
+      source: declared
+
+  # Только каскад по priority. Воспроизводит выбор, который был до скорера,
+  # и заодно показывает, что старое поведение выражается конфигом, а не кодом.
+  priority_only:
+    weights:
+      traffic_share: 0.00
+      volume_share: 0.00
+      conversion: 0.00
+      priority: 1.00
+      turnover_min: 0.00
+      load: 0.00
+      speed: 0.00
+    tie_break: [input_order]
+
+# Как мерить отклонение от целевой доли.
+#
+#   expected — через ожидаемое количество: target/100 · (роздано + 1) минус роздано этому.
+#   ratio    — буквально по формуле: (target − факт%) / (target + ε).
+#
+# По умолчанию expected. Причина: доля не определена, пока ничего не роздано, и ratio
+# на первой заявке выдаёт ровно 1.0 всем сразу — цель 40% и цель 25% в этот момент
+# неразличимы. Ожидание считается всегда и порядок целей сохраняет.
+traffic_share:
+  mode: expected
+
+volume_share:
+  mode: expected
+
+conversion:
+  # history — считаем по data/operations_history.csv
+  # declared — берём conversion_24h из providers.json
+  # blend    — смесь, доля истории в blend_history_weight
+  source: history
+  blend_history_weight: 0.7
+
+  # C_hist = 0.50·C_общая + 0.25·C_банк + 0.15·C_сумма + 0.10·C_card_brand.
+  # Срез без данных выбрасывается, веса оставшихся перенормируются до суммы 1.
+  slice_weights:
+    overall: 0.50
+    bank: 0.25
+    amount: 0.15
+    card: 0.10
+
+  # Сила сглаживания к родительской ставке: rate = (approved + α·parent) / (n + α).
+  # По истории на провайдера приходится 19–41 заявка, на пару провайдер+банк — 2–10,
+  # поэтому сырые доли шумят и их надо подтягивать к родителю.
+  prior_strength: 5
+
+  # Вес среза домножается на долю уверенности n/(n+α): клетка на трёх строках не должна
+  # весить столько же, сколько клетка на сорока. Пустой срез при этом гаснет сам.
+  confidence_weighting: true
+
+  # Границы бакетов суммы для C_сумма.
+  amount_buckets: [5000, 50000, 100000]
+
+speed:
+  # declared — avg_latency_sec из providers.json, история как запасной вариант
+  # history  — наоборот: медиана по успешным заявкам из CSV
+  source: declared
+
+  # Speed = clip(1 − avg_latency_sec / latency_scale_sec, 0, 1).
+  # Шкала абсолютная, а не min-max по пулу: иначе значение фактора у одного и того же
+  # провайдера прыгало бы от заявки к заявке в зависимости от состава кандидатов.
+  latency_scale_sec: 120
+
+# Защита от деления на ноль в D_t, D_v и M, когда цель равна нулю.
+epsilon: 1.0e-06
+
+# Как разрешать ничью. Применяется по порядку, до первого различия.
+tie_break:
+  - priority_asc
+  - conversion_desc
+  - input_order
+
+# Сколько факторов показывать в details у выбранного провайдера.
+explain_top_factors: 3

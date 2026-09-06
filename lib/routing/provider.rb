@@ -155,6 +155,10 @@ module Routing
       optional_number("conversion_24h")
     end
 
+    def avg_latency_sec
+      optional_number("avg_latency_sec")
+    end
+
     def self.normalize_bank(bank)
       bank.to_s.downcase.strip
     end

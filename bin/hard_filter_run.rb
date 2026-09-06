@@ -1,9 +1,13 @@
 #!/usr/bin/env ruby
-# Черновой прогон очереди через hard-фильтры.
+# Черновой прогон очереди через hard-фильтры, без soft-целей.
 #
-# Скорера ещё нет, поэтому из допущенных провайдеров берётся первый по priority —
-# ЗАГЛУШКА до SoftScorer, никакой стратегии здесь не изображается. Смысл прогона в другом:
-# посмотреть, как фильтры и состояние ведут себя на длинной очереди.
+# Полный конвейер живёт в bin/route.rb; этот скрипт остался как диагностика самих фильтров:
+# из допущенных берётся первый по priority, никакой стратегии не изображается. Смысл — увидеть,
+# как фильтры и состояние ведут себя на длинной очереди, не подмешивая скоринг.
+#
+# Выбор «первый по priority» больше не зашит в код: это профиль priority_only из
+# config/scoring.yml, где весь вес отдан фактору priority. Заодно видно, что старое
+# поведение выражается конфигом.
 #
 #   ruby bin/hard_filter_run.rb --queue data/operations_queue_10.json
 #   ruby scripts/validate_10.rb out/hard_filter_dry_run.json
@@ -17,15 +21,9 @@ require "routing"
 require "routing/data_loader"
 
 module HardFilterRun
-  FALLBACK_REASON = "fallback_self_provider".freeze
-  ONLY_ELIGIBLE = "only_eligible_provider".freeze
-  BY_PRIORITY = "first_by_priority".freeze
+  PROFILE = "priority_only".freeze
 
-  # Сколько заявка висит в работе, прежде чем освободить in-progress.
-  # Настоящую длительность даст симулятор результата вместе со скорером.
-  HOLD_SEC = 45
-
-  Decision = Struct.new(:operation, :provider, :attempts, :fallback, keyword_init: true)
+  Decision = Routing::Router::Decision
 
   module_function
 
@@ -34,38 +32,19 @@ module HardFilterRun
     operations = load!(queue_path) { |path| Routing::DataLoader.operations(path) }
 
     external = routable(all_providers)
+    scorer = Routing::SoftScorer.new(config: Routing::ScoringConfig.load(profile: PROFILE))
+    router = Routing::Router.new(providers: external, scorer: scorer)
 
     state = Routing::RoutingState.new(all_providers)
-    in_flight = []
-    decisions = operations.map do |operation|
-      release_finished(state, in_flight, operation.created_at || state.now)
-      route(external, operation, state, in_flight)
-    end
+    decisions = router.run(operations, state)
 
     write_decisions(out_path, decisions)
     print_summary(all_providers, operations, decisions, state)
     decisions
   end
 
-  # Кандидаты на роутинг. Не hard-проверки, а состав пула:
-  #  - self-provider держим в стороне, он последняя инстанция, а не конкурент;
-  #  - провайдер с нулевой целевой долей трафика в раздачу не идёт
-  #    (это же правило в scripts/validate_10.rb).
   def routable(providers)
-    providers.reject do |provider|
-      provider.name == Routing::SELF_PROVIDER || provider.traffic_percentage.to_f.zero?
-    end
-  end
-
-  # Заявки не висят в работе вечно: к моменту следующей операции часть уже завершилась
-  # и освободила лимиты. Без этого in-progress только растёт и съедает весь пул.
-  def release_finished(state, in_flight, now)
-    in_flight.reject! do |entry|
-      next false if entry[:until] > now
-
-      state.release_in_progress(entry[:provider], entry[:amount])
-      true
-    end
+    Routing::Router.routable(providers)
   end
 
   def load!(path)
@@ -73,37 +52,6 @@ module HardFilterRun
     loaded.errors.each { |error| warn "  пропущено — #{path}: #{error}" }
     abort "В #{path} не оказалось ни одной пригодной записи" if loaded.items.empty?
     loaded.items
-  end
-
-  def route(providers, operation, state, in_flight)
-    result = Routing::HardConstraints.eligible(providers, operation, state)
-    attempts = result.rejections.dup
-
-    if result.empty?
-      # Пул пуст — заявка уходит self-provider'у, hard-ограничения при этом не ослабляются.
-      attempts << Routing::Attempt.selected(Routing::SELF_PROVIDER, FALLBACK_REASON,
-                                            "все внешние провайдеры исключены")
-      apply_state(state, Routing::SELF_PROVIDER, operation, in_flight)
-      return Decision.new(operation: operation, provider: nil, attempts: attempts, fallback: true)
-    end
-
-    chosen = result.eligible.min_by { |provider| provider.priority || Float::INFINITY }
-    reason = result.eligible.size == 1 ? ONLY_ELIGIBLE : BY_PRIORITY
-    details = "priority #{chosen.priority}, допущено #{result.eligible.size} из #{providers.size}"
-    attempts << Routing::Attempt.selected(chosen.name, reason, details)
-
-    apply_state(state, chosen, operation, in_flight)
-    Decision.new(operation: operation, provider: chosen, attempts: attempts, fallback: false)
-  end
-
-  # Состояние двигается после каждой заявки: следующая уже видит новый оборот и загрузку.
-  # Отдельный StateUpdater появится вместе со скорером — пока это его минимальная версия.
-  def apply_state(state, provider, operation, in_flight)
-    at = operation.created_at || state.now
-    state.record_request(provider, at: at)
-    state.add_in_progress(provider, operation.amount)
-    state.add_daily_amount(provider, operation.amount)
-    in_flight << { provider: provider, amount: operation.amount, until: at + HOLD_SEC }
   end
 
   def write_decisions(path, decisions)
@@ -139,7 +87,7 @@ module HardFilterRun
       counts[decision.provider ? decision.provider.name : Routing::SELF_PROVIDER] += 1
     end
 
-    puts "\nРаспределение (заглушка по priority, не стратегия):"
+    puts "\nРаспределение (только каскад по priority, soft-цели выключены):"
     providers.each do |provider|
       count = counts[provider.name]
       target = provider.traffic_percentage

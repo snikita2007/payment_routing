@@ -14,14 +14,18 @@ module Routing
       :in_progress_count,
       :in_progress_amount,
       :request_times,
+      :routed_count,
+      :routed_amount,
       keyword_init: true
     )
 
-    attr_reader :clock
+    attr_reader :clock, :total_routed_count, :total_routed_amount
 
     def initialize(providers, clock: -> { Time.now })
       @clock = clock
       @counters = {}
+      @total_routed_count = 0
+      @total_routed_amount = 0
       Array(providers).each { |provider| register(provider) }
     end
 
@@ -30,7 +34,9 @@ module Routing
         daily_approved_amount: provider.daily_approved_amount,
         in_progress_count: provider.in_progress_count,
         in_progress_amount: provider.in_progress_amount,
-        request_times: []
+        request_times: [],
+        routed_count: 0,
+        routed_amount: 0
       )
     end
 
@@ -55,6 +61,50 @@ module Routing
       times = counters_for(provider).request_times
       times.reject! { |time| at - time > RATE_WINDOW_SEC }
       times.size
+    end
+
+    # Сколько заявок и денег ушло провайдеру за этот прогон.
+    #
+    # Отдельно от daily_approved_amount: тот стартует с уже накопленного за сутки значения
+    # (у vipay это 3.2 млн из providers.json), а доля по количеству и объёму считается
+    # от того, что раздал сам роутер, — иначе первая же заявка сравнивалась бы с чужой историей.
+    def routed_count(provider)
+      counters_for(provider).routed_count
+    end
+
+    def routed_amount(provider)
+      counters_for(provider).routed_amount
+    end
+
+    # Фактическая доля провайдера в процентах — то, с чем soft-цели сравнивают целевую долю.
+    # До первой заявки доля не определена; отдаём 0, чтобы все выглядели одинаково недобравшими.
+    def count_share_pct(provider)
+      return 0.0 if total_routed_count.zero?
+
+      routed_count(provider) * 100.0 / total_routed_count
+    end
+
+    def volume_share_pct(provider)
+      return 0.0 if total_routed_amount.zero?
+
+      routed_amount(provider) * 100.0 / total_routed_amount
+    end
+
+    # toward_share: false — заявка провайдеру ушла, но в знаменатель долей не идёт.
+    # Так учитывается fallback на self-provider: целевые доли (40/35/25) заданы по внешним
+    # провайдерам и дают в сумме 100, поэтому заявка, ушедшая в последнюю инстанцию,
+    # разбавила бы их все сразу и держала бы недобор положительным до конца очереди.
+    def record_routed(provider, amount, toward_share: true)
+      counters = counters_for(provider)
+      counters.routed_count += 1
+      counters.routed_amount += amount
+
+      if toward_share
+        @total_routed_count += 1
+        @total_routed_amount += amount
+      end
+
+      self
     end
 
     # Отметить факт отправки заявки провайдеру — этим двигается счётчик интенсивности.
