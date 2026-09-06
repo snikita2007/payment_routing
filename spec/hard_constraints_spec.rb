@@ -60,7 +60,7 @@ RSpec.describe Routing::HardConstraints do
     it "смотрит на оборот из состояния, а не из providers.json" do
       provider = build_provider(daily_amount_limit: 100_000, daily_approved_amount: 0)
       state = build_state(provider)
-      state.add_daily_amount(provider, 95_000)
+      state.add_daily_turnover(provider, 95_000)
 
       expect(reason_for(provider, build_operation(amount: 10_000), state)).to eq("daily_limit_exceeded")
     end
@@ -244,7 +244,7 @@ RSpec.describe Routing::HardConstraints do
     it "отдаёт attempts в формате routing_decisions" do
       result = described_class.eligible(providers, build_operation(amount: 20_000, bank: "sberbank"), state)
 
-      expect(result.attempts.first.to_h).to eq(
+      expect(result.rejections.first.to_h).to eq(
         "provider" => "quickpay",
         "decision" => "skipped",
         "reason" => "no_available_requisites",

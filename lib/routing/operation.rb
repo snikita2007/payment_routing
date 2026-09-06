@@ -69,6 +69,12 @@ module Routing
       @raw = raw
     end
 
+    # Платёжная система карты. Отдельным полем не разбираем: в очереди она везде null,
+    # а срез по ней нужен только статистике — но лазить в raw снаружи всё равно не стоит.
+    def card_brand
+      raw["card_brand"] || raw[:card_brand]
+    end
+
     def normalized_bank
       Provider.normalize_bank(bank)
     end

@@ -60,13 +60,11 @@ module Routing
     def approve_probability(provider, operation)
       from_history = stats && !stats.empty? &&
                      stats.estimate(provider, bank: operation.bank, amount: operation.amount,
-                                              card_brand: card_brand(operation)).value
+                                              card_brand: operation.card_brand).value
       return from_history.clamp(0.0, 1.0) if from_history
 
-      declared = provider.respond_to?(:conversion_24h) ? provider.conversion_24h : nil
-      return ConversionStats::NO_HISTORY_RATE if declared.nil?
-
-      (declared > 1 ? declared / 100.0 : declared.to_f).clamp(0.0, 1.0)
+      declared = provider.respond_to?(:conversion_rate) ? provider.conversion_rate : nil
+      declared || ConversionStats::NO_HISTORY_RATE
     end
 
     private
@@ -78,7 +76,7 @@ module Routing
     # и «детерминированный» прогон расходился бы от запуска к запуску. Берём FNV-1a — пять строк
     # арифметики вместо зависимости, ровно по той же причине, по которой не тянем csv.
     def random_for(provider, operation)
-      Random.new(fnv1a("#{seed}:#{operation.id}:#{name_of(provider)}"))
+      Random.new(fnv1a("#{seed}:#{operation.id}:#{Provider.name_of(provider)}"))
     end
 
     FNV_OFFSET = 0xcbf29ce484222325
@@ -127,12 +125,5 @@ module Routing
       FALLBACK_LATENCY.fetch(EXPIRED).fdiv(FALLBACK_LATENCY.fetch(APPROVED))
     end
 
-    def card_brand(operation)
-      operation.raw["card_brand"] || operation.raw[:card_brand]
-    end
-
-    def name_of(provider)
-      provider.is_a?(Provider) ? provider.name : provider.to_s
-    end
   end
 end

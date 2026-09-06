@@ -1,10 +1,22 @@
 require_relative "attempt"
+require_relative "format"
 
 module Routing
   # Условия допуска провайдера к роутингу: «можно ли вообще отправить эту заявку сюда».
-  # Применяются до выбора стратегии, ни одна из них не может быть перевешена скором.
   #
-  # Добавить правило = добавить класс с #call и строку в DEFAULT_CHECKS.
+  # Применяются до выбора стратегии, и ни одну из них нельзя перевесить скором — это
+  # главный инвариант решения. Soft-факторы ранжируют только тех, кто уже прошёл сюда.
+  #
+  # Одна проверка — один класс с методом #call, который возвращает Attempt со skipped
+  # при отказе и nil при проходе. Чтобы добавить правило, нужны класс и строка
+  # в DEFAULT_CHECKS; ни Filter, ни Router при этом не меняются.
+  #
+  # Ограничение, которое не задано (nil), никого не отсекает: решение обязано работать
+  # на непропатченном providers.json.
+  #
+  # Проверки лежат одним файлом намеренно. Каждая — полтора десятка строк, и все они
+  # делят общий словарь причин (amount_exceeds_limit, bank_not_in_list, …), который
+  # обязан совпадать с эталоном организаторов. Набор причин виден целиком только так.
   module HardConstraints
     # Одна hard-проверка. #call возвращает Attempt со skipped, если провайдер не проходит,
     # и nil, если проходит. Ограничение, которое не задано (nil), никого не отсекает.
@@ -25,10 +37,7 @@ module Routing
 
       # Числа в details пишем без хвоста .0 — они уходят в отчёт для человека.
       def fmt(value)
-        return value.to_s unless value.is_a?(Numeric)
-        return "∞" if value == Float::INFINITY
-
-        value == value.to_i ? value.to_i.to_s : format("%.2f", value)
+        Format.number(value)
       end
     end
 
@@ -71,7 +80,7 @@ module Routing
     # если оно есть, действует более строгое из двух.
     class DailyLimitCheck < BaseCheck
       def call(provider, operation, state)
-        used = state.daily_approved_amount(provider)
+        used = state.daily_turnover(provider)
         projected = used + operation.amount
 
         limit, source = effective_limit(provider)
@@ -197,31 +206,31 @@ module Routing
       end
     end
 
-    # Порядок совпадает с таблицей hard-constraints из ТЗ и определяет, какая причина
-    # попадёт в attempts, если провайдер нарушает сразу несколько условий.
+    # Порядок совпадает с таблицей hard-constraints из ТЗ и решает, какая именно причина
+    # попадёт в attempts, если провайдер нарушает сразу несколько условий: берётся первая
+    # сработавшая.
     DEFAULT_CHECKS = [
-      StatusCheck,
-      AmountRangeCheck,
-      DailyLimitCheck,
-      InProgressCountCheck,
-      InProgressAmountCheck,
-      BankFilterCheck,
-      MarginCheck,
-      RequisitesCheck,
-      RateLimitCheck
+      StatusCheck,             # провайдер вообще работает?
+      AmountRangeCheck,        # сумма чека в диапазоне
+      DailyLimitCheck,         # дневной оборот не выйдет за лимит
+      InProgressCountCheck,    # свободен слот по количеству заявок в работе
+      InProgressAmountCheck,   # свободен слот по сумме заявок в работе
+      BankFilterCheck,         # банк заявки разрешён
+      MarginCheck,             # не уходим в минус по марже
+      RequisitesCheck,         # есть свободные реквизиты
+      RateLimitCheck           # не превышена интенсивность запросов
     ].freeze
 
     # Результат фильтрации: кто допущен и почему исключены остальные.
+    # Отказы уже готовыми Attempt'ами — их и увидит жюри в attempts[].
     Result = Struct.new(:eligible, :rejections, keyword_init: true) do
       def empty?
         eligible.empty?
       end
-
-      def attempts
-        rejections
-      end
     end
 
+    # Прогоняет провайдеров через список проверок. Сам список — не его дело:
+    # он приходит снаружи, а порядок задан в DEFAULT_CHECKS.
     class Filter
       attr_reader :checks
 
@@ -257,6 +266,7 @@ module Routing
       end
     end
 
+    # Один общий Filter на процесс: проверки не хранят состояния, создавать их на заявку незачем.
     def self.default
       @default ||= Filter.new
     end

@@ -2,7 +2,7 @@ require "json"
 require "stringio"
 require "tmpdir"
 
-require_relative "../bin/route"
+require_relative "spec_helper"
 
 # Полный конвейер на данных организаторов: hard-фильтры → скоринг → решение.
 # real_data_spec.rb проверяет сами фильтры; здесь — то, что добавил скорер.
@@ -11,26 +11,16 @@ RSpec.describe "маршрутизация со скорингом" do
     File.expand_path("../data/#{name}", __dir__)
   end
 
-  def silently
-    out = $stdout
-    err = $stderr
-    $stdout = StringIO.new
-    $stderr = StringIO.new
-    yield
-  ensure
-    $stdout = out
-    $stderr = err
-  end
-
+  # Прогон боевым путём: тот же Pipeline, что зовёт bin/route.rb, и та же сериализация.
+  # Проверяем разом и объекты решений, и то, что реально уходит в routing_decisions.json.
   def route(profile: nil)
+    result = Routing::Pipeline.run(queue_path: data_file("operations_queue_10.json"),
+                                   providers_path: data_file("providers.json"),
+                                   profile: profile)
+
     Dir.mktmpdir do |dir|
-      out = File.join(dir, "decisions.json")
-      decisions = silently do
-        Route.run(queue_path: data_file("operations_queue_10.json"),
-                  providers_path: data_file("providers.json"),
-                  out_path: out, profile: profile, quiet: true)
-      end
-      [decisions, JSON.parse(File.read(out))]
+      out = Routing::DecisionsFile.write(File.join(dir, "decisions.json"), result.decisions)
+      [result.decisions, JSON.parse(File.read(out))]
     end
   end
 
@@ -147,7 +137,7 @@ RSpec.describe "маршрутизация со скорингом" do
 
   describe "состояние после прогона" do
     it "считает розданное по каждому провайдеру и в сумме" do
-      state = silently do
+      state = begin
         providers = Routing::ProviderOverrides.load
                                               .apply(Routing::DataLoader.providers(data_file("providers.json")).items)
                                               .providers

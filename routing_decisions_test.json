@@ -1,0 +1,262 @@
+[
+  {
+    "operation_id": "op_101",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_weighted_score",
+        "details": "score 0.476 = conversion 0.27×0.78 + priority 0.08×1.00 + traffic_share 0.18×0.40 (+4); конверсия по истории 0.781 = общая 0.62×0.77 (n=41) + банк sberbank 0.21×0.83 (n=8) + сумма 5000–50000 0.17×0.75 (n=24)"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score 0.398 = conversion 0.27×0.64 + volume_share 0.13×0.45 + load 0.05×0.93 (+4) — ниже, чем у vipay (0.476)"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score 0.344 = conversion 0.27×0.54 + traffic_share 0.18×0.35 + priority 0.08×0.50 (+4) — ниже, чем у vipay (0.476)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 51
+  },
+  {
+    "operation_id": "op_102",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "alfa не в banks [sberbank, tinkoff, vtb]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "highest_weighted_score",
+        "details": "score 0.475 = conversion 0.27×0.69 + traffic_share 0.18×0.50 + volume_share 0.13×0.59 (+4); конверсия по истории 0.691 = общая 0.64×0.68 (n=40) + банк alfa 0.21×0.70 (n=7) + сумма 5000–50000 0.16×0.74 (n=13)"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score 0.399 = conversion 0.27×0.48 + traffic_share 0.18×0.70 + priority 0.08×0.50 (+4) — ниже, чем у quickpay (0.475)"
+      }
+    ],
+    "simulated_result": "expired",
+    "latency_sec": 448
+  },
+  {
+    "operation_id": "op_103",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "amount_exceeds_limit",
+        "details": "150000 > limit_amount_max 100000"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "amount_exceeds_limit",
+        "details": "150000 > limit_amount_max 50000"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "score 0.275 = conversion 0.27×0.61 + traffic_share 0.18×-0.25 + load 0.05×0.87 (+4); конверсия по истории 0.613 = общая 0.69×0.68 (n=40) + банк sberbank 0.19×0.44 (n=5) + сумма >100000 0.12×0.54 (n=5)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 42
+  },
+  {
+    "operation_id": "op_104",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "gazprombank не в banks [sberbank, tinkoff, vtb]"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "gazprombank не в banks [sberbank, alfa]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "score -0.025 = conversion 0.27×0.67 + traffic_share 0.18×-1.00 + volume_share 0.13×-1.00 (+3); конверсия по истории 0.668 = общая 0.67×0.68 (n=40) + банк gazprombank 0.19×0.64 (n=5) + сумма ≤5000 0.14×0.67 (n=9)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 37
+  },
+  {
+    "operation_id": "op_105",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "tinkoff не в banks [sberbank, alfa]"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_weighted_score",
+        "details": "score 0.553 = conversion 0.27×0.77 + volume_share 0.13×0.82 + traffic_share 0.18×0.50 (+4); конверсия по истории 0.773 = общая 0.63×0.77 (n=41) + банк tinkoff 0.19×0.80 (n=6) + сумма 5000–50000 0.18×0.75 (n=24)"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score -0.001 = conversion 0.27×0.69 + traffic_share 0.18×-1.00 + volume_share 0.13×-0.85 (+3) — ниже, чем у vipay (0.553)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 62
+  },
+  {
+    "operation_id": "op_106",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "amount_exceeds_limit",
+        "details": "52000 > limit_amount_max 50000"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_weighted_score",
+        "details": "score 0.467 = conversion 0.27×0.80 + priority 0.08×1.00 + volume_share 0.13×0.61 (+4); конверсия по истории 0.803 = общая 0.64×0.77 (n=41) + банк sberbank 0.22×0.83 (n=8) + сумма 50000–100000 0.13×0.91 (n=8)"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score 0.031 = traffic_share 0.18×-1.00 + conversion 0.27×0.63 + volume_share 0.13×-0.52 (+3) — ниже, чем у vipay (0.467)"
+      }
+    ],
+    "simulated_result": "rejected",
+    "latency_sec": 24
+  },
+  {
+    "operation_id": "op_107",
+    "selected_provider": "payflow",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "amount_below_minimum",
+        "details": "800 < limit_amount_min 1000"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "amount_below_minimum",
+        "details": "800 < limit_amount_min 1000"
+      },
+      {
+        "provider": "payflow",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "score 0.563 = traffic_share 0.18×1.00 + conversion 0.27×0.54 + volume_share 0.13×1.00 (+4); доля по количеству: цель 35%, факт 0.0% (недобор 35 п.п.)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 90
+  },
+  {
+    "operation_id": "op_108",
+    "selected_provider": "quickpay",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "raiffeisen не в banks [sberbank, tinkoff, vtb]"
+      },
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "raiffeisen не в banks [sberbank, alfa]"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "selected",
+        "reason": "only_eligible_provider",
+        "details": "score 0.162 = conversion 0.27×0.69 + traffic_share 0.18×-0.50 + load 0.05×0.87 (+3); конверсия по истории 0.691 = общая 0.64×0.68 (n=40) + банк raiffeisen 0.21×0.70 (n=7) + сумма 5000–50000 0.16×0.74 (n=13)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 46
+  },
+  {
+    "operation_id": "op_109",
+    "selected_provider": "vipay",
+    "attempts": [
+      {
+        "provider": "payflow",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "vtb не в banks [sberbank, alfa]"
+      },
+      {
+        "provider": "vipay",
+        "decision": "selected",
+        "reason": "highest_weighted_score",
+        "details": "score 0.387 = conversion 0.27×0.76 + priority 0.08×1.00 + speed 0.05×0.68 (+5); конверсия по истории 0.760 = общая 0.62×0.77 (n=41) + банк vtb 0.20×0.74 (n=7) + сумма 5000–50000 0.17×0.75 (n=24)"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score 0.086 = conversion 0.27×0.72 + traffic_share 0.18×-0.78 + volume_share 0.13×-0.56 (+3) — ниже, чем у vipay (0.387)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 48
+  },
+  {
+    "operation_id": "op_110",
+    "selected_provider": "payflow",
+    "attempts": [
+      {
+        "provider": "vipay",
+        "decision": "skipped",
+        "reason": "bank_not_in_list",
+        "details": "alfa не в banks [sberbank, tinkoff, vtb]"
+      },
+      {
+        "provider": "payflow",
+        "decision": "selected",
+        "reason": "highest_weighted_score",
+        "details": "score 0.496 = conversion 0.27×0.48 + volume_share 0.13×0.99 + traffic_share 0.18×0.71 (+4); конверсия по истории 0.484 = общая 0.62×0.52 (n=19) + банк alfa 0.23×0.38 (n=7) + сумма 5000–50000 0.16×0.51 (n=10)"
+      },
+      {
+        "provider": "quickpay",
+        "decision": "skipped",
+        "reason": "lower_score",
+        "details": "score 0.134 = conversion 0.27×0.69 + traffic_share 0.18×-0.60 + volume_share 0.13×-0.40 (+3) — ниже, чем у payflow (0.496)"
+      }
+    ],
+    "simulated_result": "approved",
+    "latency_sec": 74
+  }
+]

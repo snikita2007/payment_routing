@@ -103,7 +103,7 @@ module Routing
       at = operation.created_at || state.now
       state.record_request(provider, at: at)
       state.add_in_progress(provider, operation.amount)
-      state.add_daily_amount(provider, operation.amount)
+      state.add_daily_turnover(provider, operation.amount)
       state.record_routed(provider, operation.amount, toward_share: toward_share)
 
       outcome = simulator && simulator.simulate(provider, operation)

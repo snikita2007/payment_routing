@@ -1,6 +1,7 @@
 require "time"
 
 require_relative "errors"
+require_relative "format"
 require_relative "provider"
 
 module Routing
@@ -131,7 +132,7 @@ module Routing
     end
 
     def sample_size(provider)
-      tally_for(@by_provider, name_of(provider)).total
+      @by_provider[name_of(provider)].total
     end
 
     # Сырая доля approve по всей истории — точка отсчёта для сглаживания.
@@ -141,7 +142,7 @@ module Routing
 
     # Сглаженная общая ставка провайдера. Незнакомый провайдер получает глобальную.
     def overall_rate(provider)
-      smooth(tally_for(@by_provider, name_of(provider)), global_rate)
+      smooth(@by_provider[name_of(provider)], global_rate)
     end
 
     # Медиана времени успешных заявок — запасной источник для фактора скорости,
@@ -170,12 +171,7 @@ module Routing
     # Какая часть сбоев провайдера — просрочка, а не отказ. Нужна симулятору, чтобы
     # разложить сбой на rejected и expired. Без данных отдаём nil, решает конфиг.
     def expired_share(provider)
-      name = name_of(provider)
-      expired = @status_counts[[name, EXPIRED]]
-      failures = @status_counts.sum { |(row_name, status), count| row_name == name && status != APPROVED ? count : 0 }
-      return nil if failures.zero?
-
-      expired.fdiv(failures)
+      @expired_share[name_of(provider)]
     end
 
     # Исходы как события во времени — для опции include_history у фактора недавних сбоев.
@@ -190,7 +186,7 @@ module Routing
       parent = overall_rate(name)
 
       candidates = [
-        slice("overall", "общая", tally_for(@by_provider, name), global_rate),
+        slice("overall", "общая", @by_provider[name], global_rate),
         slice("bank", bank_label(bank), bank_tally(name, bank), parent),
         slice("amount", amount_label(amount), amount_tally(name, amount), parent),
         slice("card", card_label(card_brand), card_tally(name, card_brand), parent)
@@ -215,6 +211,23 @@ module Routing
 
       rows.each_with_index { |row, index| absorb(row, index) }
       @events.each_value { |list| list.sort_by!(&:first) }
+      @expired_share = build_expired_share
+    end
+
+    # Какая часть сбоев провайдера — просрочка, а не отказ. История за прогон не меняется,
+    # поэтому считаем один раз здесь, а не на каждом обращении симулятора.
+    # Провайдер без единого сбоя в таблицу не попадает: делить нечего, и nil честнее нуля.
+    def build_expired_share
+      totals = Hash.new { |hash, key| hash[key] = [0, 0] }
+
+      @status_counts.each do |(name, status), count|
+        next if status == APPROVED
+
+        totals[name][0] += count if status == EXPIRED
+        totals[name][1] += count
+      end
+
+      totals.to_h { |name, (expired, failures)| [name, expired.fdiv(failures)] }
     end
 
     def absorb(row, index)
@@ -233,10 +246,10 @@ module Routing
       amount = to_amount(value_of(row, "amount", "sum"))
 
       @global.add(success)
-      tally_for(@by_provider, name).add(success)
-      tally_for(@by_bank, [name, bank]).add(success) unless bank.empty?
-      tally_for(@by_amount, [name, bucket_index(amount)]).add(success) unless amount.nil?
-      tally_for(@by_card, [name, card]).add(success) unless card.empty?
+      @by_provider[name].add(success)
+      @by_bank[[name, bank]].add(success) unless bank.empty?
+      @by_amount[[name, bucket_index(amount)]].add(success) unless amount.nil?
+      @by_card[[name, card]].add(success) unless card.empty?
       @status_counts[[name, status]] += 1
 
       latency = to_amount(value_of(row, "latency_sec", "latency"))
@@ -281,17 +294,17 @@ module Routing
 
     def bank_tally(name, bank)
       key = normalize(bank)
-      key.empty? ? Tally.new(0, 0) : tally_for(@by_bank, [name, key])
+      key.empty? ? Tally.new(0, 0) : @by_bank[[name, key]]
     end
 
     def amount_tally(name, amount)
       value = to_amount(amount)
-      value.nil? ? Tally.new(0, 0) : tally_for(@by_amount, [name, bucket_index(value)])
+      value.nil? ? Tally.new(0, 0) : @by_amount[[name, bucket_index(value)]]
     end
 
     def card_tally(name, card_brand)
       key = normalize(card_brand)
-      key.empty? ? Tally.new(0, 0) : tally_for(@by_card, [name, key])
+      key.empty? ? Tally.new(0, 0) : @by_card[[name, key]]
     end
 
     def bank_label(bank)
@@ -331,12 +344,8 @@ module Routing
       Hash.new { |hash, key| hash[key] = Tally.new(0, 0) }
     end
 
-    def tally_for(table, key)
-      table[key]
-    end
-
     def name_of(provider)
-      provider.is_a?(Provider) ? provider.name : provider.to_s
+      Provider.name_of(provider)
     end
 
     def value_of(row, *keys)
@@ -387,8 +396,9 @@ module Routing
       (weights || {}).to_h { |key, value| [key.to_s, value.to_f] }
     end
 
+    # Границы бакетов в подписях — без копеек: «сумма 5000–50000», а не «5000.00».
     def fmt(value)
-      value == value.to_i ? value.to_i.to_s : format("%.0f", value)
+      Format.number(value, precision: 0)
     end
   end
 end

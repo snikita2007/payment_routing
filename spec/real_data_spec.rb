@@ -1,7 +1,6 @@
 require "json"
-require "stringio"
 
-require_relative "../bin/hard_filter_run"
+require_relative "spec_helper"
 
 # Сверка с данными и эталоном организаторов (data/). Валидатор scripts/validate_10.rb
 # проверяет только итоговый selected_provider; здесь дополнительно фиксируем сам
@@ -22,7 +21,7 @@ RSpec.describe "hard-фильтры на данных организаторов
   # поэтому и сверяем на чистом стартовом состоянии, по одной заявке за раз.
   def eligible_names(operation)
     state = Routing::RoutingState.new(providers)
-    pool = HardFilterRun.routable(providers)
+    pool = Routing::Router.routable(providers)
     Routing::HardConstraints.eligible(pool, operation, state).eligible.map(&:name)
   end
 
@@ -47,7 +46,7 @@ RSpec.describe "hard-фильтры на данных организаторов
     reference["skip_reasons_expected"].each do |operation_id, expected_skips|
       operation = operations.find { |op| op.id == operation_id }
       state = Routing::RoutingState.new(providers)
-      pool = HardFilterRun.routable(providers)
+      pool = Routing::Router.routable(providers)
       rejections = Routing::HardConstraints.eligible(pool, operation, state).rejections
       actual = rejections.to_h { |attempt| [attempt.provider, attempt.reason] }
 
@@ -58,25 +57,14 @@ RSpec.describe "hard-фильтры на данных организаторов
   end
 
   describe "полный прогон очереди" do
+    # Профиль priority_only отдаёт весь вес фактору priority, то есть повторяет выбор
+    # «первый по приоритету из допущенных» — прогон без влияния остальных soft-целей.
     let(:decisions) do
-      out = File.join(Dir.tmpdir, "hard_filter_spec_#{Process.pid}.json")
-      silence_output do
-        HardFilterRun.run(
-          queue_path: File.join(DATA_DIR, "operations_queue_10.json"),
-          providers_path: File.join(DATA_DIR, "providers.json"),
-          out_path: out
-        )
-      end
-    ensure
-      File.delete(out) if out && File.exist?(out)
-    end
-
-    def silence_output
-      original = $stdout
-      $stdout = StringIO.new
-      yield
-    ensure
-      $stdout = original
+      Routing::Pipeline.run(
+        queue_path: File.join(DATA_DIR, "operations_queue_10.json"),
+        providers_path: File.join(DATA_DIR, "providers.json"),
+        profile: "priority_only"
+      ).decisions
     end
 
     it "принимает решение по каждой заявке, ровно с одним selected" do

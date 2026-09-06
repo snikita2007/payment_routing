@@ -31,9 +31,19 @@ module Routing
       nil
     end
 
+    # Провайдера повсюду принимаем и объектом, и просто именем: состояние, статистика
+    # и симулятор ключуются по имени, а звать их удобно и тем и другим.
+    def self.name_of(provider)
+      provider.is_a?(Provider) ? provider.name : provider.to_s
+    end
+
     def initialize(name, raw = {})
       @name = name
       @raw = raw
+      # Поля читаются десятками раз на заявку (одни только hard-проверки дёргают их
+      # на каждого провайдера), а объект после создания не меняется — разбираем однажды.
+      @fields = {}
+      @numbers = {}
     end
 
     def validate!
@@ -88,17 +98,19 @@ module Routing
     # nil = список не задан, разрешены любые банки.
     # Пустой массив трактуем так же: это «поле не заполнили», а не «запретить всё».
     def banks
-      normalize_bank_list(field("banks"))
+      return @banks if defined?(@banks)
+
+      @banks = normalize_bank_list(field("banks"))
     end
 
     # В боевых данных exclude_banks — булев флаг: он переключает banks из белого
     # списка в чёрный (см. scripts/validate_10.rb). В ТЗ то же поле показано как
     # отдельный список исключений, поэтому поддерживаем обе формы.
     def exclude_banks
-      value = field("exclude_banks")
-      return banks || [] if value == true
+      return @exclude_banks if defined?(@exclude_banks)
 
-      normalize_bank_list(value) || []
+      value = field("exclude_banks")
+      @exclude_banks = value == true ? (banks || []) : (normalize_bank_list(value) || [])
     end
 
     # true, если banks нужно читать как чёрный список, а не белый.
@@ -155,6 +167,23 @@ module Routing
       optional_number("conversion_24h")
     end
 
+    # conversion_24h, приведённая к доле [0, 1]. nil, если поле не задано.
+    #
+    # В providers.json это доля (0.87), но то же поле легко приходит в процентах (87),
+    # и делить одно на другое одинаково нельзя. Граница — единица; на 0.5 или 1 правило
+    # принципиально угадать не может. Клип нужен для мусора: 150 без него дало бы 1.5,
+    # и фактор конверсии с весом 0.27 внёс бы 0.40, выйдя за собственный бюджет весов.
+    #
+    # Живёт здесь, а не в скорере, потому что читателей двое: скорер и симулятор исхода.
+    # Разойдись их трактовки — симулятор моделировал бы не того провайдера, которого
+    # выбрал скорер, и заметить это по выходу было бы нечем.
+    def conversion_rate
+      value = conversion_24h
+      return nil if value.nil?
+
+      (value > 1 ? value / 100.0 : value.to_f).clamp(0.0, 1.0)
+    end
+
     def avg_latency_sec
       optional_number("avg_latency_sec")
     end
@@ -179,12 +208,15 @@ module Routing
     private
 
     def field(key)
-      self.class.fetch_any(raw, key)
+      @fields.fetch(key) { @fields[key] = self.class.fetch_any(raw, key) }
     end
 
+    # Каждый ключ читается ровно с одним дефолтом, поэтому кешировать можно по имени поля.
     def number(key, default)
-      value = field(key)
-      value.nil? ? default : to_number(value, key)
+      @numbers.fetch(key) do
+        value = field(key)
+        @numbers[key] = value.nil? ? default : to_number(value, key)
+      end
     end
 
     def optional_number(key)

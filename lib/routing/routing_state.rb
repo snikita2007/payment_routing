@@ -10,7 +10,7 @@ module Routing
     RATE_WINDOW_SEC = 60
 
     Counters = Struct.new(
-      :daily_approved_amount,
+      :daily_turnover,
       :in_progress_count,
       :in_progress_amount,
       :request_times,
@@ -32,7 +32,7 @@ module Routing
 
     def register(provider)
       @counters[provider.name] ||= Counters.new(
-        daily_approved_amount: provider.daily_approved_amount,
+        daily_turnover: provider.daily_approved_amount,
         in_progress_count: provider.in_progress_count,
         in_progress_amount: provider.in_progress_amount,
         request_times: [],
@@ -46,8 +46,12 @@ module Routing
       clock.call
     end
 
-    def daily_approved_amount(provider)
-      counters_for(provider).daily_approved_amount
+    # Оборот, набранный провайдером за сутки. Именно оборот, а не одобренная сумма:
+    # сюда идёт каждая отправленная заявка, независимо от того, чем она кончилась.
+    # Стартует с daily_approved_amount из providers.json — того, что провайдер набрал
+    # до начала прогона.
+    def daily_turnover(provider)
+      counters_for(provider).daily_turnover
     end
 
     def in_progress_count(provider)
@@ -67,7 +71,7 @@ module Routing
 
     # Сколько заявок и денег ушло провайдеру за этот прогон.
     #
-    # Отдельно от daily_approved_amount: тот стартует с уже накопленного за сутки значения
+    # Отдельно от daily_turnover: тот стартует с уже накопленного за сутки значения
     # (у vipay это 3.2 млн из providers.json), а доля по количеству и объёму считается
     # от того, что раздал сам роутер, — иначе первая же заявка сравнивалась бы с чужой историей.
     def routed_count(provider)
@@ -129,8 +133,8 @@ module Routing
       self
     end
 
-    def add_daily_amount(provider, amount)
-      counters_for(provider).daily_approved_amount += amount
+    def add_daily_turnover(provider, amount)
+      counters_for(provider).daily_turnover += amount
       self
     end
 
@@ -151,7 +155,7 @@ module Routing
     private
 
     def counters_for(provider)
-      name = provider.is_a?(Provider) ? provider.name : provider.to_s
+      name = Provider.name_of(provider)
       @counters[name] || raise(ArgumentError, "провайдер #{name} не зарегистрирован в состоянии")
     end
   end
