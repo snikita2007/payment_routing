@@ -19,24 +19,26 @@ module Routing
       "profiles" => {
         "hybrid" => {
           "weights" => {
-            "traffic_share" => 0.20,
-            "volume_share" => 0.15,
-            "conversion" => 0.30,
-            "priority" => 0.10,
-            "turnover_min" => 0.15,
-            "load" => 0.05,
-            "speed" => 0.05
+            "traffic_share" => 0.176,
+            "volume_share" => 0.132,
+            "conversion" => 0.264,
+            "priority" => 0.088,
+            "turnover_min" => 0.132,
+            "load" => 0.044,
+            "speed" => 0.044,
+            "recent_failure" => 0.12
           }
         },
         "declared" => {
           "weights" => {
-            "traffic_share" => 0.25,
-            "volume_share" => 0.20,
-            "conversion" => 0.25,
-            "priority" => 0.10,
-            "turnover_min" => 0.15,
-            "load" => 0.05,
-            "speed" => 0.00
+            "traffic_share" => 0.22,
+            "volume_share" => 0.176,
+            "conversion" => 0.22,
+            "priority" => 0.088,
+            "turnover_min" => 0.132,
+            "load" => 0.044,
+            "speed" => 0.00,
+            "recent_failure" => 0.12
           },
           "conversion" => { "source" => "declared" }
         },
@@ -48,7 +50,8 @@ module Routing
             "priority" => 1.00,
             "turnover_min" => 0.00,
             "load" => 0.00,
-            "speed" => 0.00
+            "speed" => 0.00,
+            "recent_failure" => 0.00
           },
           # Заглушка выбирала min_by(priority), то есть при равных приоритетах — первого
           # по порядку пула. Чтобы профиль повторял её и в этом случае, ничего, кроме
@@ -74,6 +77,18 @@ module Routing
       "speed" => {
         "source" => "declared",
         "latency_scale_sec" => 120
+      },
+      "recent_failure" => {
+        "half_life_sec" => 45,
+        "prior_strength" => 1,
+        "baseline" => "none",
+        "include_history" => false
+      },
+      "simulation" => {
+        "enabled" => true,
+        "seed" => 20_260_730,
+        "expired_share" => nil,
+        "latency_source" => "history"
       },
       "epsilon" => 1.0e-06,
       "tie_break" => %w[priority_asc conversion_desc input_order],

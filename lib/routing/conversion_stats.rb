@@ -1,3 +1,5 @@
+require "time"
+
 require_relative "errors"
 require_relative "provider"
 
@@ -23,6 +25,8 @@ module Routing
     DEFAULT_PATH = File.expand_path("../../data/operations_history.csv", __dir__).freeze
 
     APPROVED = "approved".freeze
+    REJECTED = "rejected".freeze
+    EXPIRED = "expired".freeze
     DEFAULT_BUCKETS = [5000, 50000, 100000].freeze
     DEFAULT_SLICE_WEIGHTS = {
       "overall" => 0.50,
@@ -144,12 +148,40 @@ module Routing
     # когда в providers.json нет avg_latency_sec. Просроченные заявки в выборку не берём:
     # их latency на порядок больше и сдвинула бы медиану.
     def median_latency(provider)
-      samples = @latency[name_of(provider)]
-      return nil if samples.nil? || samples.empty?
+      median(latency_samples(provider, APPROVED))
+    end
 
-      sorted = samples.sort
-      middle = sorted.size / 2
-      sorted.size.odd? ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2.0
+    # Задержки по конкретному статусу — для симулятора результата.
+    # Разделение по статусу принципиально: у expired средняя задержка в истории 585 секунд
+    # против ~55 у остальных, и общая выборка дала бы бессмысленную середину.
+    def latency_samples(provider, status)
+      @latency[[name_of(provider), status.to_s.downcase]] || []
+    end
+
+    def median_latency_for(provider, status)
+      median(latency_samples(provider, status))
+    end
+
+    # Доля сбоев — дополнение к сглаженной ставке одобрений.
+    def failure_rate(provider)
+      1.0 - overall_rate(provider)
+    end
+
+    # Какая часть сбоев провайдера — просрочка, а не отказ. Нужна симулятору, чтобы
+    # разложить сбой на rejected и expired. Без данных отдаём nil, решает конфиг.
+    def expired_share(provider)
+      name = name_of(provider)
+      expired = @status_counts[[name, EXPIRED]]
+      failures = @status_counts.sum { |(row_name, status), count| row_name == name && status != APPROVED ? count : 0 }
+      return nil if failures.zero?
+
+      expired.fdiv(failures)
+    end
+
+    # Исходы как события во времени — для опции include_history у фактора недавних сбоев.
+    # Строки без разбираемого created_at пропускаем: событие без времени затухать не умеет.
+    def outcome_events(provider)
+      @events[name_of(provider)] || []
     end
 
     # C_hist для конкретной заявки.
@@ -178,8 +210,11 @@ module Routing
       @by_amount = new_table
       @by_card = new_table
       @latency = Hash.new { |hash, key| hash[key] = [] }
+      @status_counts = Hash.new(0)
+      @events = Hash.new { |hash, key| hash[key] = [] }
 
       rows.each_with_index { |row, index| absorb(row, index) }
+      @events.each_value { |list| list.sort_by!(&:first) }
     end
 
     def absorb(row, index)
@@ -191,7 +226,8 @@ module Routing
         return
       end
 
-      success = status.strip.downcase == APPROVED
+      status = status.strip.downcase
+      success = status == APPROVED
       bank = normalize(value_of(row, "bank", "bank_name"))
       card = normalize(value_of(row, "card_brand"))
       amount = to_amount(value_of(row, "amount", "sum"))
@@ -201,9 +237,13 @@ module Routing
       tally_for(@by_bank, [name, bank]).add(success) unless bank.empty?
       tally_for(@by_amount, [name, bucket_index(amount)]).add(success) unless amount.nil?
       tally_for(@by_card, [name, card]).add(success) unless card.empty?
+      @status_counts[[name, status]] += 1
 
       latency = to_amount(value_of(row, "latency_sec", "latency"))
-      @latency[name] << latency if success && latency
+      @latency[[name, status]] << latency if latency
+
+      at = to_time(value_of(row, "created_at", "timestamp", "datetime"))
+      @events[name] << [at, success ? 0 : 1] if at
     end
 
     # Срез участвует в формуле, только если в нём есть хоть одна заявка.
@@ -309,6 +349,27 @@ module Routing
 
     def normalize(value)
       Provider.normalize_bank(value)
+    end
+
+    def median(samples)
+      return nil if samples.nil? || samples.empty?
+
+      sorted = samples.sort
+      middle = sorted.size / 2
+      sorted.size.odd? ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2.0
+    end
+
+    # Время не обязательно: строка без разбираемого created_at просто не станет событием,
+    # на подсчёт конверсии это не влияет.
+    def to_time(value)
+      return value if value.is_a?(Time)
+
+      text = value.to_s.strip
+      return nil if text.empty?
+
+      Time.parse(text)
+    rescue ArgumentError, TypeError
+      nil
     end
 
     def to_amount(value)

@@ -16,6 +16,7 @@ module Routing
       :request_times,
       :routed_count,
       :routed_amount,
+      :outcomes,
       keyword_init: true
     )
 
@@ -36,7 +37,8 @@ module Routing
         in_progress_amount: provider.in_progress_amount,
         request_times: [],
         routed_count: 0,
-        routed_amount: 0
+        routed_amount: 0,
+        outcomes: []
       )
     end
 
@@ -105,6 +107,20 @@ module Routing
       end
 
       self
+    end
+
+    # Журнал исходов: [момент, когда исход стал известен; 1 — сбой, 0 — успех].
+    #
+    # Состояние их только хранит, затухание считает фактор — то же разделение, что у остальных
+    # счётчиков. Ключевое здесь at: это не момент отправки заявки, а момент, когда ответ пришёл.
+    # Заявка, ушедшая 30 секунд назад с задержкой 50 секунд, ещё ничего о провайдере не говорит.
+    def record_outcome(provider, at:, failure:)
+      counters_for(provider).outcomes << [at, failure ? 1 : 0]
+      self
+    end
+
+    def outcomes(provider)
+      counters_for(provider).outcomes
     end
 
     # Отметить факт отправки заявки провайдеру — этим двигается счётчик интенсивности.

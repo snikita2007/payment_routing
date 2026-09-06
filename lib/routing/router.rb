@@ -1,5 +1,6 @@
 require_relative "attempt"
 require_relative "hard_constraints"
+require_relative "result_simulator"
 require_relative "soft_scorer"
 
 module Routing
@@ -10,9 +11,9 @@ module Routing
   # Очередь идёт последовательно и порядок значим: каждая заявка двигает обороты,
   # in-progress и доли, и следующая видит уже новую картину. Параллелить нельзя.
   class Router
-    # Сколько заявка висит в работе, прежде чем освободить in-progress.
-    # Точную длительность даст симулятор результата; пока — фиксированная выдержка,
-    # без неё in-progress только растёт и к концу очереди съедает весь пул.
+    # Сколько заявка висит в работе, когда симулятора нет. С симулятором вместо этой
+    # выдержки берётся настоящая длительность ответа: заявка освобождает in-progress
+    # ровно тогда, когда исход стал известен.
     HOLD_SEC = 45
 
     HIGHEST_SCORE = "highest_weighted_score".freeze
@@ -20,7 +21,8 @@ module Routing
     LOWER_SCORE = "lower_score".freeze
     FALLBACK_REASON = "fallback_self_provider".freeze
 
-    Decision = Struct.new(:operation, :provider, :attempts, :fallback, :ranked, keyword_init: true)
+    Decision = Struct.new(:operation, :provider, :attempts, :fallback, :ranked, :outcome,
+                          keyword_init: true)
 
     # Состав пула — не hard-проверка, а вопрос «кто вообще участвует»:
     #  - self-provider держим в стороне, он последняя инстанция, а не конкурент;
@@ -32,15 +34,16 @@ module Routing
       end
     end
 
-    attr_reader :providers, :scorer, :filter, :hold_sec, :explain_top
+    attr_reader :providers, :scorer, :filter, :hold_sec, :explain_top, :simulator
 
     def initialize(providers:, scorer:, filter: HardConstraints.default,
-                   hold_sec: HOLD_SEC, explain_top: 3)
+                   hold_sec: HOLD_SEC, explain_top: 3, simulator: nil)
       @providers = providers
       @scorer = scorer
       @filter = filter
       @hold_sec = hold_sec
       @explain_top = explain_top
+      @simulator = simulator
       @in_flight = []
     end
 
@@ -65,9 +68,9 @@ module Routing
       attempts << selected_attempt(winner, ranked)
       ranked.drop(1).each { |loser| attempts << outscored_attempt(loser, winner) }
 
-      apply(state, winner.provider, operation)
+      outcome = apply(state, winner.provider, operation)
       Decision.new(operation: operation, provider: winner.provider, attempts: attempts,
-                   fallback: false, ranked: ranked)
+                   fallback: false, ranked: ranked, outcome: outcome)
     end
 
     private
@@ -77,9 +80,9 @@ module Routing
     def fallback(operation, state, attempts)
       attempts << Attempt.selected(SELF_PROVIDER, FALLBACK_REASON,
                                    "все внешние провайдеры исключены")
-      apply(state, SELF_PROVIDER, operation, toward_share: false)
+      outcome = apply(state, SELF_PROVIDER, operation, toward_share: false)
       Decision.new(operation: operation, provider: nil, attempts: attempts,
-                   fallback: true, ranked: [])
+                   fallback: true, ranked: [], outcome: outcome)
     end
 
     def selected_attempt(winner, ranked)
@@ -102,7 +105,15 @@ module Routing
       state.add_in_progress(provider, operation.amount)
       state.add_daily_amount(provider, operation.amount)
       state.record_routed(provider, operation.amount, toward_share: toward_share)
-      @in_flight << { provider: provider, amount: operation.amount, until: at + hold_sec }
+
+      outcome = simulator && simulator.simulate(provider, operation)
+      # Исход становится известен не в момент отправки, а когда пришёл ответ. С этого же
+      # момента заявка перестаёт занимать in-progress — одно и то же событие.
+      done_at = (outcome && outcome.known_at) || at + hold_sec
+      state.record_outcome(provider, at: done_at, failure: outcome.failure?) if outcome
+
+      @in_flight << { provider: provider, amount: operation.amount, until: done_at }
+      outcome
     end
 
     def release_finished(state, now)

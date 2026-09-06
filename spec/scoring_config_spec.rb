@@ -13,7 +13,7 @@ RSpec.describe Routing::ScoringConfig do
     config = described_class.load(nil)
 
     expect(config.profile_name).to eq("hybrid")
-    expect(config.weight("conversion")).to eq(0.30)
+    expect(config.weight("conversion")).to eq(0.264)
   end
 
   # Ради этого дефолты и продублированы в коде: на сдаче достаточно поправить одну строку,
@@ -23,7 +23,7 @@ RSpec.describe Routing::ScoringConfig do
       config = described_class.load(path)
 
       expect(config.weight("conversion")).to eq(0.5)
-      expect(config.weight("traffic_share")).to eq(0.20)
+      expect(config.weight("traffic_share")).to eq(0.176)
       expect(config.options("speed")["latency_scale_sec"]).to eq(120)
     end
   end
@@ -61,7 +61,8 @@ RSpec.describe Routing::ScoringConfig do
     it "не даёт свести выбор к одному tie_break нулевыми весами" do
       yaml = "profiles:\n  hybrid:\n    weights:\n      " \
              "traffic_share: 0\n      volume_share: 0\n      conversion: 0\n      " \
-             "priority: 0\n      turnover_min: 0\n      load: 0\n      speed: 0\n"
+             "priority: 0\n      turnover_min: 0\n      load: 0\n      speed: 0\n      " \
+             "recent_failure: 0\n"
 
       with_config(yaml) do |path|
         expect { described_class.load(path).validate_weights!(Routing::Factors.keys) }

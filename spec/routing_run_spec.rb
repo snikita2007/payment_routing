@@ -110,6 +110,41 @@ RSpec.describe "маршрутизация со скорингом" do
     expect(with_soft).not_to eq(without_soft)
   end
 
+  describe "симулированный результат" do
+    it "есть у каждого решения и лежит в словаре ТЗ" do
+      payload.each do |item|
+        expect(%w[approved rejected expired]).to include(item["simulated_result"]), item["operation_id"]
+        expect(item["latency_sec"]).to be_a(Integer).and be_positive
+      end
+    end
+
+    # Симулятор вносит случайность, и без фиксированного seed прогон переставал бы быть
+    # воспроизводимым: ни сравнить профили, ни сдать один и тот же файл дважды.
+    it "прогон воспроизводим" do
+      expect(route.last).to eq(route.last)
+    end
+
+    it "исход освобождает in-progress тогда же, когда становится известен" do
+      decisions.reject(&:fallback).each do |decision|
+        outcome = decision.outcome
+        expect(outcome.known_at).to eq(decision.operation.created_at + outcome.latency_sec)
+      end
+    end
+
+    # Штраф питается только тем, что уже известно. На этой очереди исход первой заявки
+    # приходит на 51-й секунде, то есть позже второй заявки, — и до этого момента
+    # штрафовать некого.
+    it "до первого пришедшего исхода штраф ни на кого не действует" do
+      first = decisions.first
+      penalties = first.ranked.flat_map do |scored|
+        scored.contributions.select { |item| item.factor == "recent_failure" }
+      end
+
+      expect(penalties).not_to be_empty
+      expect(penalties.map(&:value)).to all(eq(0.0))
+    end
+  end
+
   describe "состояние после прогона" do
     it "считает розданное по каждому провайдеру и в сумме" do
       state = silently do

@@ -117,6 +117,56 @@ RSpec.describe Routing::SoftScorer do
     end
   end
 
+  describe "штраф за свежие сбои" do
+    # На боевой очереди из 10 заявок штраф ничего не переворачивает: единственные заявки
+    # с зазором меньше 0.12 — первые две, а к этому моменту ни один исход ещё не пришёл
+    # (первый известен только на 51-й секунде). Поэтому работоспособность фактора
+    # проверяем на сценарии, где зазор узкий, а сбой уже случился.
+    let(:base) { Time.parse("2026-07-30T09:00:00+03:00") }
+    let(:leader) { build_provider("leader", priority: 1, conversion_24h: 0.80) }
+    let(:runner_up) { build_provider("runner_up", priority: 1, conversion_24h: 0.78) }
+    let(:pair) { [leader, runner_up] }
+
+    let(:scorer) do
+      described_class.new(
+        config: config_with(
+          { "conversion" => 0.5, "recent_failure" => 0.5 },
+          "recent_failure" => { "half_life_sec" => 45, "prior_strength" => 1 }
+        )
+      )
+    end
+
+    let(:later) { build_operation(created_at: (base + 10).iso8601) }
+
+    it "без сбоев впереди тот, кто лучше по конверсии" do
+      expect(scorer.rank(pair, later, build_state(pair)).first.name).to eq("leader")
+    end
+
+    it "свежий сбой у лидера отдаёт заявку второму" do
+      state = build_state(pair)
+      state.record_outcome(leader, at: base, failure: true)
+
+      expect(scorer.rank(pair, later, state).first.name).to eq("runner_up")
+    end
+
+    it "давний сбой уже не переворачивает выбор" do
+      state = build_state(pair)
+      state.record_outcome(leader, at: base - 600, failure: true)
+
+      expect(scorer.rank(pair, later, state).first.name).to eq("leader")
+    end
+
+    it "штраф виден в разборе как отрицательный вклад" do
+      state = build_state(pair)
+      state.record_outcome(leader, at: base, failure: true)
+      contribution = scorer.score(leader, later, state)
+                           .contributions.find { |item| item.factor == "recent_failure" }
+
+      expect(contribution.contribution).to be < 0
+      expect(contribution.explain).to match(/свежие сбои/)
+    end
+  end
+
   describe "профиль priority_only" do
     let(:providers) do
       Routing::DataLoader.providers(File.expand_path("../data/providers.json", __dir__)).items

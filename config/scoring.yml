@@ -19,24 +19,26 @@ profiles:
   # Основной профиль: конверсия берётся из истории.
   hybrid:
     weights:
-      traffic_share: 0.20
-      volume_share: 0.15
-      conversion: 0.30
-      priority: 0.10
-      turnover_min: 0.15
+      traffic_share: 0.18
+      volume_share: 0.13
+      conversion: 0.27
+      priority: 0.08
+      turnover_min: 0.12
       load: 0.05
       speed: 0.05
+      recent_failure: 0.12
 
   # Без истории: конверсия — заявленный conversion_24h, скорость не учитываем.
   declared:
     weights:
-      traffic_share: 0.25
-      volume_share: 0.20
-      conversion: 0.25
-      priority: 0.10
-      turnover_min: 0.15
-      load: 0.05
+      traffic_share: 0.22
+      volume_share: 0.176
+      conversion: 0.22
+      priority: 0.088
+      turnover_min: 0.132
+      load: 0.044
       speed: 0.00
+      recent_failure: 0.12
     conversion:
       source: declared
 
@@ -51,6 +53,7 @@ profiles:
       turnover_min: 0.00
       load: 0.00
       speed: 0.00
+      recent_failure: 0.00
     tie_break: [input_order]
 
 # Как мерить отклонение от целевой доли.
@@ -103,6 +106,42 @@ speed:
   # Шкала абсолютная, а не min-max по пулу: иначе значение фактора у одного и того же
   # провайдера прыгало бы от заявки к заявке в зависимости от состава кандидатов.
   latency_scale_sec: 120
+
+# Штраф за свежие сбои: w_j = exp(−ln2 · возраст / half_life_sec).
+recent_failure:
+  # Заявки в очереди идут с шагом 30 с: сбой минуту назад весит 0.40 от свежего,
+  # пять минут назад — 0.001. Ставьте часы, только если включаете историю ниже.
+  half_life_sec: 45
+
+  # Сглаживание: один сбой не должен выкручивать штраф на максимум. При α = 1 он даёт 0.5,
+  # то есть вклад в скор 0.06 при весе 0.12 — сопоставимо с реальными зазорами между
+  # первым и вторым местом (0.07–0.08 на спорных заявках). Больше α — глуше реакция.
+  # Заодно убирает 0/0, когда событий нет вовсе.
+  prior_strength: 1
+
+  # none       — нет свежих сбоев, нет и штрафа (по умолчанию)
+  # historical — за базу берётся историческая доля сбоев провайдера; учтите, что тогда
+  #              фактор во многом повторяет conversion, только со знаком минус
+  baseline: none
+
+  # Подмешивать ли историю в затухающие события. По умолчанию нет: последнее событие
+  # в CSV на 20 часов раньше очереди, при T½ в секундах его вес — машинный ноль.
+  include_history: false
+
+# Симуляция исхода заявки. Она же источник событий для recent_failure.
+simulation:
+  enabled: true
+
+  # Один и тот же seed даёт один и тот же прогон. Меняйте, чтобы посмотреть другой расклад.
+  seed: 20260730
+
+  # Какая доля сбоев приходится на expired, остальное — rejected.
+  # null — взять пропорцию из истории провайдера.
+  expired_share: null
+
+  # history  — задержка выбирается из истории по тому же статусу
+  # declared — из avg_latency_sec в providers.json
+  latency_source: history
 
 # Защита от деления на ноль в D_t, D_v и M, когда цель равна нулю.
 epsilon: 1.0e-06

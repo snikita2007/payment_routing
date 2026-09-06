@@ -8,6 +8,7 @@ require_relative "routing/scoring_config"
 require_relative "routing/provider_overrides"
 require_relative "routing/conversion_stats"
 require_relative "routing/factors"
+require_relative "routing/result_simulator"
 require_relative "routing/soft_scorer"
 require_relative "routing/router"
 

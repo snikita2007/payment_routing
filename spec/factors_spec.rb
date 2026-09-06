@@ -97,6 +97,14 @@ RSpec.describe Routing::Factors do
         value = factor(described_class, source: "declared").score(blank, build_operation, build_state(blank))
         expect(value).to eq(0.5)
       end
+
+      # Мусор в данных не должен выносить фактор за его бюджет весов:
+      # без клипа 150 стало бы 1.5, и слагаемое с весом 0.30 внесло бы 0.45.
+      it "не выпускает значение за пределы [0, 1]" do
+        broken = build_provider("vipay", conversion_24h: 150)
+        value = factor(described_class, source: "declared").score(broken, build_operation, build_state(broken))
+        expect(value).to eq(1.0)
+      end
     end
 
     context "источник history" do
@@ -229,10 +237,113 @@ RSpec.describe Routing::Factors do
     end
   end
 
+  describe Routing::Factors::RecentFailureFactor do
+    let(:provider) { build_provider("vipay") }
+    let(:state) { build_state(provider) }
+    let(:base) { Time.parse("2026-07-30T09:00:00+03:00") }
+
+    def at(offset)
+      build_operation(created_at: (base + offset).iso8601)
+    end
+
+    def fail_at(offset)
+      state.record_outcome(provider, at: base + offset, failure: true)
+    end
+
+    it "без событий молчит и не даёт NaN" do
+      assessment = factor(described_class).assess(provider, at(0), state)
+
+      expect(assessment.value).to eq(0.0)
+      expect(assessment.explain).to include("свежих сбоев нет")
+    end
+
+    it "свежий сбой уводит фактор в минус" do
+      fail_at(0)
+      expect(factor(described_class).score(provider, at(10), state)).to be < 0
+    end
+
+    it "успешные заявки штрафа не создают" do
+      state.record_outcome(provider, at: base, failure: false)
+      expect(factor(described_class).score(provider, at(10), state)).to eq(0.0)
+    end
+
+    # Ради этого фактор и вводился: недавний сбой должен весить больше давнего.
+    it "сбой 20 секунд назад штрафует сильнее, чем сбой 4 минуты 50 секунд назад" do
+      recent = build_state(provider)
+      recent.record_outcome(provider, at: base - 20, failure: true)
+      old = build_state(provider)
+      old.record_outcome(provider, at: base - 290, failure: true)
+
+      subject = factor(described_class, half_life_sec: 45)
+      expect(subject.score(provider, at(0), recent).abs)
+        .to be > subject.score(provider, at(0), old).abs * 5
+    end
+
+    it "период полураспада задаёт скорость забывания" do
+      fail_at(0)
+      short = factor(described_class, half_life_sec: 10).score(provider, at(60), state).abs
+      long = factor(described_class, half_life_sec: 600).score(provider, at(60), state).abs
+
+      expect(long).to be > short
+    end
+
+    # Исход заявки, отправленной 30 секунд назад с задержкой 50 секунд, ещё не пришёл.
+    # Учитывать его — значит подглядывать в будущее и штрафовать за то, чего мы не знаем.
+    it "не заглядывает вперёд: событие из будущего не учитывается" do
+      fail_at(120)
+      expect(factor(described_class).score(provider, at(60), state)).to eq(0.0)
+      expect(factor(described_class).score(provider, at(121), state)).to be < 0
+    end
+
+    it "один сбой не выкручивает штраф на максимум" do
+      fail_at(0)
+      value = factor(described_class, half_life_sec: 45, prior_strength: 1).score(provider, at(0), state)
+
+      expect(value).to be_within(1e-6).of(-0.5)
+    end
+
+    it "череда сбоев штрафует сильнее одного" do
+      fail_at(0)
+      one = factor(described_class).score(provider, at(1), state).abs
+      3.times { |i| fail_at(i + 1) }
+      many = factor(described_class).score(provider, at(5), state).abs
+
+      expect(many).to be > one
+    end
+
+    it "не выходит за пределы [−1, 0]" do
+      50.times { |i| fail_at(i) }
+      value = factor(described_class).score(provider, at(50), state)
+
+      expect(value).to be_between(-1.0, 0.0)
+    end
+
+    it "по умолчанию историческую долю сбоев в базу не берёт" do
+      stats = Routing::ConversionStats.new(
+        Array.new(20) { { "payment_system" => "vipay", "status" => "rejected", "bank" => "vtb",
+                          "amount" => "1000", "card_brand" => "", "latency_sec" => "10" } }
+      )
+      subject = described_class.new(options: {}, epsilon: 1.0e-06, stats: stats)
+
+      expect(subject.score(provider, at(0), state)).to eq(0.0)
+    end
+
+    it "с baseline: historical опирается на историю даже без свежих событий" do
+      stats = Routing::ConversionStats.new(
+        Array.new(20) { { "payment_system" => "vipay", "status" => "rejected", "bank" => "vtb",
+                          "amount" => "1000", "card_brand" => "", "latency_sec" => "10" } }
+      )
+      subject = described_class.new(options: { "baseline" => "historical" }, epsilon: 1.0e-06, stats: stats)
+
+      expect(subject.score(provider, at(0), state)).to be < -0.5
+    end
+  end
+
   describe "реестр" do
-    it "знает все семь факторов формулы" do
+    it "знает все восемь факторов формулы" do
       expect(described_class.keys).to contain_exactly(
-        "traffic_share", "volume_share", "conversion", "priority", "turnover_min", "load", "speed"
+        "traffic_share", "volume_share", "conversion", "priority",
+        "turnover_min", "load", "speed", "recent_failure"
       )
     end
 

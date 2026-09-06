@@ -39,7 +39,8 @@ module Route
 
     scorer = Routing::SoftScorer.new(config: config, stats: stats)
     router = Routing::Router.new(providers: external, scorer: scorer,
-                                 explain_top: config.explain_top_factors)
+                                 explain_top: config.explain_top_factors,
+                                 simulator: build_simulator(config, stats))
 
     state = Routing::RoutingState.new(providers)
     decisions = router.run(operations, state)
@@ -73,6 +74,20 @@ module Route
     )
   end
 
+  # Симулятор даёт simulated_result и latency_sec, а заодно события для штрафа
+  # за свежие сбои. Выключенный — не ошибка: Router тогда работает по фиксированной выдержке.
+  def build_simulator(config, stats)
+    options = config.options("simulation")
+    return nil unless options.fetch("enabled", true)
+
+    Routing::ResultSimulator.new(
+      stats: stats,
+      seed: options.fetch("seed", Routing::ResultSimulator::DEFAULT_SEED),
+      expired_share: options["expired_share"],
+      latency_source: options.fetch("latency_source", "history")
+    )
+  end
+
   def load!(path)
     loaded = yield(path)
     loaded.errors.each { |error| notice("пропущено — #{path}: #{error}") }
@@ -97,11 +112,18 @@ module Route
   def write_decisions(path, decisions)
     FileUtils.mkdir_p(File.dirname(path))
     payload = decisions.map do |decision|
-      {
+      item = {
         "operation_id" => decision.operation.id,
         "selected_provider" => decision.provider ? decision.provider.name : Routing::SELF_PROVIDER,
         "attempts" => decision.attempts.map(&:to_h)
       }
+
+      if decision.outcome
+        item["simulated_result"] = decision.outcome.status
+        item["latency_sec"] = decision.outcome.latency_sec
+      end
+
+      item
     end
     File.write(path, JSON.pretty_generate(payload) + "\n")
   end
@@ -113,6 +135,7 @@ module Route
     puts "Заявок обработано: #{decisions.size}"
 
     print_distribution(external, decisions, state)
+    print_outcomes(decisions)
     print_skip_reasons(decisions)
     print_utilization(providers, state)
 
@@ -161,6 +184,33 @@ module Route
     forced = decisions.count { |decision| decision.ranked.size == 1 }
     puts "\n  скорер выбирал: #{contested}, предопределено фильтрами: #{forced}, " \
          "fallback: #{decisions.count(&:fallback)}"
+  end
+
+  def print_outcomes(decisions)
+    outcomes = decisions.map(&:outcome).compact
+    return if outcomes.empty?
+
+    puts "\nСимулированные исходы:"
+    Routing::ResultSimulator::STATUSES.each do |status|
+      matching = outcomes.select { |outcome| outcome.status == status }
+      next if matching.empty?
+
+      latency = matching.sum(&:latency_sec).fdiv(matching.size)
+      puts format("  %-10s %3d  %5s%%   средняя задержка %d с",
+                  status, matching.size, pct(matching.size, outcomes.size), latency.round)
+    end
+
+    by_provider = Hash.new { |hash, key| hash[key] = [0, 0] }
+    decisions.each do |decision|
+      next unless decision.outcome
+
+      name = decision.provider ? decision.provider.name : Routing::SELF_PROVIDER
+      by_provider[name][0] += 1
+      by_provider[name][1] += 1 if decision.outcome.failure?
+    end
+
+    failures = by_provider.map { |name, (total, bad)| "#{name} #{bad}/#{total}" }
+    puts "  сбоев по провайдерам: #{failures.join(', ')}"
   end
 
   def print_skip_reasons(decisions)
